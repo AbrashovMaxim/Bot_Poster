@@ -1,4 +1,7 @@
+from datetime import datetime
 import sqlite3
+
+from libs.const import LOCAL_TZ
 
 class DataBase:
     def __init__(self) -> None:
@@ -13,7 +16,8 @@ class DataBase:
         try:
             table_channels = '''CREATE TABLE channels (
                                         id INTEGER PRIMARY KEY,
-                                        channels_id INTEGER);'''
+                                        channels_id INTEGER,
+                                        kolvo_post INTEGER DEFAULT 0);'''
             cur.execute(table_channels)
             print("Таблица CHANNELS создана")
         except: pass
@@ -149,7 +153,6 @@ class DataBase:
         cur = self.conn.cursor()
         cur.execute(comm)
         data = cur.fetchall()
-        print(data)
         return data
 
     def _select_One_Table(self, table_name: str, where: str = None) -> tuple:
@@ -173,8 +176,8 @@ class DataBase:
         self.conn.commit()
 
     def _update_Table(self, table_name: str, seta: dict, where: str):
-        a = [str(i)+" = ?" for i,j in seta.items()]
-        sets = ','.join(a)
+        list_sets = [str(i)+" = ?" for i,j in seta.items()]
+        sets = ','.join(list_sets)
         comm = f'UPDATE {table_name} SET {sets} WHERE {where}'
         cur = self.conn.cursor()
         cur.execute(comm, [i for i in seta.values()])
@@ -193,6 +196,69 @@ class DataBase:
 
     def _check_admin(self, people_id: int) -> bool:
         if self._exist_Table('users', f'chat_id={people_id}'):
-            a = self._select_One_Table('users', f'chat_id={people_id}')
-            return False if a[3] == 0 else True
+            request = self._select_One_Table('users', f'chat_id={people_id}')
+            return False if request[3] == 0 else True
         return False
+    
+    def _get_first_post(self, channel_id: int, timeDate: datetime, typePost: str) -> str:
+        request = self._select_One_Table('plan_posts', f'type="{typePost}" AND ( Day >= {timeDate.day} AND Month={timeDate.month} AND Year={timeDate.year} AND Hour>={timeDate.hour} AND Minute>={timeDate.minute} ) OR ( (Day > {timeDate.day} OR Day < {timeDate.day}) AND Month > {timeDate.month} ) OR Year > {timeDate.year} ORDER BY Day ASC, Month ASC, Year ASC, hour ASC, minute ASC;')
+        if request == None: return 'Не найдено'
+        else: 
+            timePost = datetime(request[11], request[10], request[9], request[12], request[13], 0)
+            c = timePost-timeDate
+            if c.total_seconds() > 86400: return ''
+            seconds = c.total_seconds()
+            hours = seconds//3600
+            minutes = 0
+            while seconds > 60: 
+                minutes = 1 if minutes == 60 else minutes+1
+                seconds -= 60
+            m = ''
+            h = ''
+            s = ''
+            if hours != 0:
+                if hours%10 == 1: h = str(hours) + ' час'
+                elif hours%10 > 4 or hours%10 == 0: h = str(hours) + ' часов'
+                elif hours%10 > 1: h = str(hours) + ' часа'
+            if minutes != 0:
+                if minutes%10 == 1: m = str(minutes) + ' минуту'
+                elif minutes%10 > 4 or minutes%10 == 0: m = str(minutes) + ' минут'
+                elif minutes%10 > 1: m = str(minutes) + ' минуты'
+            if minutes == 0 and hours == 0:
+                if seconds%10 == 1 and seconds != 11: s = str(seconds) + ' секунду'
+                elif (seconds%10 > 1 and seconds%10 < 5 ) and ( seconds < 5 or seconds > 21 ): s = str(seconds) + ' секунды'
+                else: s = str(seconds) + ' секунд'
+
+            if h != '' and m != '': h += ' и'
+
+            return f"через {h+' ' if h != '' else h}{m}{s}"
+    
+    def _plusMinus_post_channel(self, channel_id: int, znat: int = 1):
+        request = self._select_One_Table('channels', f'channels_id={channel_id}')
+        if request != None: self._update_Table('channels', {'kolvo_post': request[2]+znat}, f'channels_id={channel_id}')
+    
+    def _get_numPost_channel(self, channel_id: int) -> int:
+        request = self._select_One_Table('channels', f'channels_id={channel_id}')
+        return request[2] if request != None else 0
+    
+    def get_admins(self) -> list:
+        request = db._select_More_Table('users', 'admin=1')
+        return [i[1] for i in request]
+            
+'''CREATE TABLE plan_posts (
+                id INTEGER PRIMARY KEY, [0]
+                name TEXT, [1]
+                chat_id INTEGER, [2]
+                channel_id INTEGER, [3]
+                media_urls TEXT, [4]
+                text TEXT, [5]
+                inline_buttons TEXT, [6]
+                type TEXT, [7]
+                pin BOOLEAN, [8]
+                day INTEGER, [9]
+                month INTEGER, [10]
+                year INTEGER, [11]
+                hour INTEGER, [12]
+                minute INTEGER [13]
+            )'''
+db = DataBase()
